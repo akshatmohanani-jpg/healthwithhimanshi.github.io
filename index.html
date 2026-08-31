@@ -1086,6 +1086,7 @@ body{padding-bottom:0;}
         <input type="hidden" name="_subject" value="New enquiry from Health with Himanshi">
         <input type="hidden" name="_template" value="table">
         <input type="hidden" name="_captcha" value="false">
+        <input type="hidden" name="_next" id="_next" value="">
         <input class="hp" type="text" name="_honey" tabindex="-1" autocomplete="off" aria-hidden="true">
         <div class="form-row">
           <div><label for="fname">First name</label><input id="fname" name="First name" type="text" autocomplete="given-name" required></div>
@@ -1118,7 +1119,7 @@ body{padding-bottom:0;}
             <option>Hormonal balance / PCOS</option>
             <option>Sustainable weight change</option>
             <option>Food psychology</option>
-            <option>Not sure yet</option>
+            <option>Others</option>
           </select>
         </div>
         <div><label for="msg">Your message</label><textarea id="msg" name="Message"></textarea></div>
@@ -1227,16 +1228,38 @@ body{padding-bottom:0;}
     items.forEach(function(el){ io.observe(el); });
   }
 
-  /* --- form: validate, then POST to FormSubmit --- */
+  /* --- form: validate, POST via AJAX, fall back to a native POST --- */
   var form = document.getElementById('contactForm');
   var note = document.getElementById('formNote');
   var sendBtn = form.querySelector('button[type="submit"]');
-  var IDLE = note.textContent;
+  var nextField = document.getElementById('_next');
+
+  var here = location.origin + location.pathname;
+  if (nextField) nextField.value = here + '?sent=1#contact';
+
+  if (location.search.indexOf('sent=1') > -1) {
+    note.className = 'form-note ok';
+    note.textContent = 'Thank you. Your message is on its way, and Himanshi will be in touch.';
+    history.replaceState(null, '', here + '#contact');
+  }
 
   function fail(msg, focusId){
     note.className = 'form-note err';
     note.textContent = msg;
     if (focusId) document.getElementById(focusId).focus();
+  }
+
+  function nativeSend(){
+    var f = document.createElement('form');
+    f.method = 'POST';
+    f.action = form.action.replace('/ajax/', '/');
+    new FormData(form).forEach(function(v, k){
+      var i = document.createElement('input');
+      i.type = 'hidden'; i.name = k; i.value = v;
+      f.appendChild(i);
+    });
+    document.body.appendChild(f);
+    f.submit();
   }
 
   form.addEventListener('submit', function(e){
@@ -1252,29 +1275,32 @@ body{padding-bottom:0;}
     if (phone && (phone.length < 7 || phone.length > 15)) return fail('That mobile number looks off. Please check the digits.', 'phone');
 
     note.className = 'form-note';
-    note.textContent = 'Sending…';
+    note.textContent = 'Sending your message';
     sendBtn.setAttribute('aria-busy','true');
+
+    var timer = setTimeout(nativeSend, 8000);
 
     fetch(form.action, {
       method: 'POST',
       headers: {'Content-Type':'application/json', 'Accept':'application/json'},
       body: JSON.stringify(Object.fromEntries(new FormData(form)))
     })
-    .then(function(r){ return r.json(); })
+    .then(function(r){ return r.json().catch(function(){ return {}; }); })
     .then(function(d){
+      clearTimeout(timer);
       if (d.success === 'true' || d.success === true) {
         form.reset();
         note.className = 'form-note ok';
         note.textContent = 'Thank you. Your message is on its way, and Himanshi will be in touch.';
+        sendBtn.removeAttribute('aria-busy');
       } else {
-        throw new Error(d.message || 'failed');
+        nativeSend();
       }
     })
     .catch(function(){
-      note.className = 'form-note err';
-      note.innerHTML = 'Something went wrong sending that. Please email <a href="mailto:healthwithhimanshi@gmail.com" style="text-decoration:underline">healthwithhimanshi@gmail.com</a> directly.';
-    })
-    .finally(function(){ sendBtn.removeAttribute('aria-busy'); });
+      clearTimeout(timer);
+      nativeSend();
+    });
   });
 })();
 </script>
